@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract UniswapV2Exchange {
-    address public owner;
-    address public WETH;
-    IUniswapV2Router02 public uniswapRouter;
+    address public immutable owner;
+    address public immutable WETH;
+    IUniswapV2Router02 public immutable uniswapRouter;
 
     bytes4 internal constant _ERC20_TRANSFER_ID = 0xa9059cbb;
     bytes4 internal constant _ERC20_TRANSFER_FROM_ID = 0x23b872dd;
@@ -23,8 +21,9 @@ contract UniswapV2Exchange {
     error SwapFailed();
 
     modifier onlyOwner() {
+        address _owner = owner;
+
         assembly {
-            let _owner := sload(owner.slot)
             if iszero(eq(caller(), _owner)) {
                 let errorPtr := mload(0x40)
                 mstore(errorPtr, 0x30cd747100000000000000000000000000000000000000000000000000000000)
@@ -35,19 +34,17 @@ contract UniswapV2Exchange {
     }
 
     constructor() {
-        assembly {
-            sstore(owner.slot, caller())
-            sstore(WETH.slot, 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)
-            sstore(uniswapRouter.slot, 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D)
-        }
+        WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        uniswapRouter = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+        owner = msg.sender;
     }
 
     receive() external payable {}
 
     function swapTokens(address _tokenToSell, address _tokenToBuy, uint256 _buyAmount) external {
-        assembly {
-            let _uniswapRouter := sload(uniswapRouter.slot)
+        address _uniswapRouter = address(uniswapRouter);
 
+        assembly {
             // transfer _tokenToSell
             mstore(0x7c, _ERC20_TRANSFER_FROM_ID)
             mstore(0x80, caller())
@@ -98,9 +95,10 @@ contract UniswapV2Exchange {
 
     function swapTokensETH(address _tokenToBuy, uint256 _buyAmount) external payable {
         uint256 value = msg.value;
-        assembly {
-            let _uniswapRouter := sload(uniswapRouter.slot)
+        address _uniswapRouter = address(uniswapRouter);
+        address _WETH = WETH;
 
+        assembly {
             // uniswapRouter.swapETHForExactTokens
             mstore(0x7c, _SWAP_ETH_FOR_EXACT_TOKENS)
             mstore(0x80, _buyAmount)
@@ -108,7 +106,7 @@ contract UniswapV2Exchange {
             mstore(0xc0, caller())
             mstore(0xe0, timestamp())
             mstore(0x100, 0x02)
-            mstore(0x120, sload(WETH.slot))
+            mstore(0x120, _WETH)
             mstore(0x140, _tokenToBuy)
 
             let success := call(gas(), _uniswapRouter, value, 0x7c, 0x144, 0, 0)
@@ -160,12 +158,9 @@ contract UniswapV2Exchange {
         }
     }
 
-    function getBalance() external view returns (uint256) {
-        uint256 bal;
+    function getBalance() external view returns (uint256 bal) {
         assembly {
             bal := selfbalance()
         }
-
-        return bal;
     }
 }
