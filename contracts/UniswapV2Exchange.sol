@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
+import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 
 contract UniswapV2Exchange {
     address public immutable owner;
@@ -9,15 +10,11 @@ contract UniswapV2Exchange {
     IUniswapV2Router02 public immutable uniswapRouter;
 
     bytes4 internal constant _ERC20_TRANSFER_ID = 0xa9059cbb;
-    bytes4 internal constant _ERC20_TRANSFER_FROM_ID = 0x23b872dd;
-    bytes4 internal constant _ERC20_APPROVE_ID = 0x095ea7b3;
-    bytes4 internal constant _SWAP_EXACT_TOKENS_FOR_TOKENS = 0x38ed1739;
-    bytes4 internal constant _SWAP_ETH_FOR_EXACT_TOKENS = 0xfb3bdb41;
+    bytes4 internal constant _PAIR_SWAP_ID = 0x022c0d9f;
     bytes4 internal constant _ERC20_BALANCE_ID = 0x70a08231;
 
     error NotOwner();
     error TransferFailed();
-    error ApproveFailed();
     error SwapFailed();
 
     modifier onlyOwner() {
@@ -39,19 +36,23 @@ contract UniswapV2Exchange {
         owner = msg.sender;
     }
 
-    receive() external payable {}
+    function swap(address _pair, address _tokenToBuy, uint256 _buyAmount) external {
+        address token0 = IUniswapV2Pair(_pair).token0();
+        address token1 = IUniswapV2Pair(_pair).token1();
 
-    function swapTokens(address _tokenToSell, address _tokenToBuy, uint256 _buyAmount) external {
-        address _uniswapRouter = address(uniswapRouter);
+        address _tokenToSell = token0 == _tokenToBuy ? token1 : token0;
+
+        (uint256 reserveIn, uint256 reserveOut, ) = IUniswapV2Pair(_pair).getReserves();
+
+        uint256 amountIn = uniswapRouter.getAmountIn(_buyAmount, reserveIn, reserveOut);
 
         assembly {
-            // transfer _tokenToSell
-            mstore(0x7c, _ERC20_TRANSFER_FROM_ID)
-            mstore(0x80, caller())
-            mstore(0xa0, address())
-            mstore(0xc0, _buyAmount)
+            // call transfer
+            mstore(0x7c, _ERC20_TRANSFER_ID)
+            mstore(0x80, _pair)
+            mstore(0xa0, amountIn)
 
-            let s1 := call(gas(), _tokenToSell, 0, 0x7c, 0xc4, 0, 0)
+            let s1 := call(gas(), _tokenToSell, 0, 0x7c, 0x44, 0, 0)
 
             if iszero(s1) {
                 let errorPtr := mload(0x40)
@@ -59,59 +60,23 @@ contract UniswapV2Exchange {
                 revert(errorPtr, 0x4)
             }
 
-            // approve
-            mstore(0x7c, _ERC20_APPROVE_ID)
-            mstore(0x80, _uniswapRouter)
-            mstore(0xa0, _buyAmount)
+            // call swap
+            mstore(0x7c, _PAIR_SWAP_ID)
+            switch eq(token0, _tokenToBuy)
+            case 0 {
+                mstore(0x80, 0)
+                mstore(0xa0, _buyAmount)
+            }
+            case 1 {
+                mstore(0x80, _buyAmount)
+                mstore(0xa0, 0)
+            }
+            mstore(0xc0, caller())
+            mstore(0xe0, "")
 
-            let s2 := call(gas(), _tokenToSell, 0, 0x7c, 0xa4, 0, 0)
+            let s2 := call(gas(), _pair, 0, 0x7c, 0xa4, 0, 0)
 
             if iszero(s2) {
-                let errorPtr := mload(0x40)
-                mstore(errorPtr, 0x3e3f8f7300000000000000000000000000000000000000000000000000000000)
-                revert(errorPtr, 0x4)
-            }
-
-            // uniswapRouter.swapExactTokensForTokens
-            mstore(0x7c, _SWAP_EXACT_TOKENS_FOR_TOKENS)
-            mstore(0x80, _buyAmount)
-            mstore(0xa0, 0)
-            mstore(0xc0, 0xa0)
-            mstore(0xe0, caller())
-            mstore(0x100, timestamp())
-            mstore(0x120, 0x02)
-            mstore(0x140, _tokenToSell)
-            mstore(0x160, _tokenToBuy)
-
-            let s3 := call(gas(), _uniswapRouter, 0, 0x7c, 0x164, 0, 0)
-
-            if iszero(s3) {
-                let errorPtr := mload(0x40)
-                mstore(errorPtr, 0x81ceff3000000000000000000000000000000000000000000000000000000000)
-                revert(errorPtr, 0x4)
-            }
-        }
-    }
-
-    function swapTokensETH(address _tokenToBuy, uint256 _buyAmount) external payable {
-        uint256 value = msg.value;
-        address _uniswapRouter = address(uniswapRouter);
-        address _WETH = WETH;
-
-        assembly {
-            // uniswapRouter.swapETHForExactTokens
-            mstore(0x7c, _SWAP_ETH_FOR_EXACT_TOKENS)
-            mstore(0x80, _buyAmount)
-            mstore(0xa0, 0x80)
-            mstore(0xc0, caller())
-            mstore(0xe0, timestamp())
-            mstore(0x100, 0x02)
-            mstore(0x120, _WETH)
-            mstore(0x140, _tokenToBuy)
-
-            let success := call(gas(), _uniswapRouter, value, 0x7c, 0x144, 0, 0)
-
-            if iszero(success) {
                 let errorPtr := mload(0x40)
                 mstore(errorPtr, 0x81ceff3000000000000000000000000000000000000000000000000000000000)
                 revert(errorPtr, 0x4)
@@ -141,26 +106,6 @@ contract UniswapV2Exchange {
                 mstore(errorPtr, 0x90b8ec1800000000000000000000000000000000000000000000000000000000)
                 revert(errorPtr, 0x4)
             }
-        }
-    }
-
-    function withdrawETH() external onlyOwner {
-        assembly {
-            let amount := selfbalance()
-
-            let success := call(gas(), caller(), amount, 0, 0, 0, 0)
-
-            if iszero(success) {
-                let errorPtr := mload(0x40)
-                mstore(errorPtr, 0x90b8ec1800000000000000000000000000000000000000000000000000000000)
-                revert(errorPtr, 0x4)
-            }
-        }
-    }
-
-    function getBalance() external view returns (uint256 bal) {
-        assembly {
-            bal := selfbalance()
         }
     }
 }

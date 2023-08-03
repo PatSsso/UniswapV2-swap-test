@@ -5,15 +5,16 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { UniswapV2Exchange } from '../typechain';
 
 import UniswapV2Router02 from '@uniswap/v2-periphery/build/IUniswapV2Router02.json';
+import UniswapV2Factory from '@uniswap/v2-periphery/build/IUniswapV2Factory.json';
 
 const UNISWAP_V2_ROUTER = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D';
 const BIG_1 = 10n ** 18n;
 
 const amount = BIG_1;
-const token0Amount = BIG_1;
-const token1Amount = BIG_1;
+const token0Amount = 5n * BIG_1;
+const token1Amount = 5n * BIG_1;
 const supply = 200n * BIG_1;
-const buyAmount = 10n ** 15n;
+const buyAmount = 2n * 10n ** 18n;
 
 const provider = ethers.provider;
 
@@ -24,13 +25,14 @@ async function getCurrentBlockTimestamp() {
   return timestamp;
 }
 
-describe('UniswapV2Router01 unit tests', function () {
+describe('Uniswap V2 exchange', function () {
   let exchange: UniswapV2Exchange;
   let token0: Contract;
   let token1: Contract;
   let owner: SignerWithAddress;
   let user: SignerWithAddress;
   let router: Contract;
+  let factory: Contract;
 
   beforeEach(async function () {
     [owner, user] = await ethers.getSigners();
@@ -48,6 +50,46 @@ describe('UniswapV2Router01 unit tests', function () {
 
     await token0.approve(router.address, supply);
     await token1.approve(router.address, supply);
+
+    factory = new ethers.Contract(await router.factory(), UniswapV2Factory.abi, owner);
+
+    await factory.createPair(token0.address, token1.address);
+  });
+
+  it('#swapTokens', async function () {
+    await router.addLiquidity(
+      token0.address,
+      token1.address,
+      token0Amount,
+      token1Amount,
+      0,
+      0,
+      owner.address,
+      (await getCurrentBlockTimestamp()) + 10
+    );
+
+    const amountIn = await router.getAmountsIn(buyAmount, [token0.address, token1.address]);
+
+    expect(await token0.balanceOf(owner.address)).to.eq(supply - token0Amount);
+    expect(await token0.balanceOf(exchange.address)).to.eq(0);
+
+    console.log(`Token balance before: ${(await token0.balanceOf(owner.address)) / 10 ** 18}`);
+    console.log(`Token balance before: ${(await token1.balanceOf(owner.address)) / 10 ** 18}`);
+
+    await token1.transfer(exchange.address, amountIn[0]);
+
+    const pairAddress = await factory.getPair(token0.address, token1.address);
+
+    const estimateGas = await exchange.estimateGas.swap(pairAddress, token0.address, buyAmount);
+    console.log('Tokens swap cost:', estimateGas.toString());
+
+    await exchange.swap(pairAddress, token0.address, buyAmount);
+
+    console.log(`------BUY ${buyAmount / BIG_1} TOKENS------`);
+    console.log(`Token balance after: ${(await token0.balanceOf(owner.address)) / 10 ** 18}`);
+    console.log(`Token balance after: ${(await token1.balanceOf(owner.address)) / 10 ** 18}`);
+
+    expect(await token0.balanceOf(owner.address)).to.eq(supply + buyAmount - token0Amount);
   });
 
   it('#withdrawTokens', async function () {
@@ -72,62 +114,5 @@ describe('UniswapV2Router01 unit tests', function () {
       exchange,
       'NotOwner'
     );
-  });
-
-  it('#swapTokens', async function () {
-    await router.addLiquidity(
-      token0.address,
-      token1.address,
-      token0Amount,
-      token1Amount,
-      0,
-      0,
-      owner.address,
-      (await getCurrentBlockTimestamp()) + 10
-    );
-
-    const balance1Before = await token1.balanceOf(owner.address);
-
-    expect(await token0.balanceOf(owner.address)).to.eq(supply - token0Amount);
-    expect(await token0.balanceOf(exchange.address)).to.eq(0);
-
-    await token0.approve(exchange.address, amount);
-
-    const estimateGas = await exchange.estimateGas.swapTokens(token0.address, token1.address, buyAmount);
-    console.log('Tokens swap cost:', estimateGas.toString());
-
-    await exchange.swapTokens(token0.address, token1.address, buyAmount);
-
-    const balance1After = await token1.balanceOf(owner.address);
-
-    const amountOut = BigInt(balance1After) - BigInt(balance1Before);
-
-    expect(await token0.balanceOf(owner.address)).to.eq(supply - buyAmount - token0Amount);
-    expect(await token1.balanceOf(owner.address)).to.eq(supply + amountOut - token1Amount);
-  });
-
-  it('#swapETHToTokens', async function () {
-    await router.addLiquidityETH(token0.address, token0Amount, 0, 0, owner.address, ethers.constants.MaxUint256, {
-      value: amount,
-    });
-
-    expect(await token0.balanceOf(owner.address)).to.eq(supply - token0Amount);
-
-    const estimateGas = await exchange.estimateGas.swapTokensETH(token0.address, buyAmount, { value: amount });
-    console.log('Swap ETH for tokens cost:', estimateGas.toString());
-
-    await exchange.swapTokensETH(token0.address, buyAmount, { value: amount });
-
-    expect(await token0.balanceOf(owner.address)).to.eq(supply - token0Amount + buyAmount);
-
-    // -----WITHDRAW-----
-    expect(await exchange.getBalance()).greaterThan(0);
-
-    const estimateGas_ = await exchange.estimateGas.withdrawETH();
-    console.log('Withdraw ETH cost:', estimateGas_.toString());
-
-    await exchange.withdrawETH();
-
-    expect(await exchange.getBalance()).eq(0);
   });
 });
