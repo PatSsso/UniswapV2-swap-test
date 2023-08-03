@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 
 contract UniswapV2Exchange {
     address public immutable owner;
-    address public immutable WETH;
-    IUniswapV2Router02 public immutable uniswapRouter;
 
     bytes4 internal constant _ERC20_TRANSFER_ID = 0xa9059cbb;
     bytes4 internal constant _PAIR_SWAP_ID = 0x022c0d9f;
@@ -31,26 +28,38 @@ contract UniswapV2Exchange {
     }
 
     constructor() {
-        WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-        uniswapRouter = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         owner = msg.sender;
     }
 
-    function swap(address _pair, address _tokenToBuy, uint256 _buyAmount) external {
-        address token0 = IUniswapV2Pair(_pair).token0();
-        address token1 = IUniswapV2Pair(_pair).token1();
-
-        address _tokenToSell = token0 == _tokenToBuy ? token1 : token0;
-
-        (uint256 reserveIn, uint256 reserveOut, ) = IUniswapV2Pair(_pair).getReserves();
-
-        uint256 amountIn = uniswapRouter.getAmountIn(_buyAmount, reserveIn, reserveOut);
+    function swap(address _pair, address _tokenToBuy, uint256 _buyAmount) external onlyOwner {
+        // 129081
+        address token0;
+        address token1;
+        address _tokenToSell;
 
         assembly {
+            mstore(0x00, 0x0dfe1681) // token0()
+            let t0 := staticcall(gas(), _pair, 0x1c, 0x20, 0x80, 0xc0)
+            returndatacopy(0, 0, returndatasize())
+            token0 := mload(0)
+
+            mstore(0x00, 0xd21220a7) // token1()
+            let t1 := staticcall(gas(), _pair, 0x1c, 0x20, 0x80, 0xc0)
+            returndatacopy(0, 0, returndatasize())
+            token1 := mload(0)
+
+            switch eq(token0, _tokenToBuy)
+            case 0 {
+                _tokenToSell := token0
+            }
+            case 1 {
+                _tokenToSell := token1
+            }
+
             // call transfer
             mstore(0x7c, _ERC20_TRANSFER_ID)
             mstore(0x80, _pair)
-            mstore(0xa0, amountIn)
+            mstore(0xa0, mul(_buyAmount, 3))
 
             let s1 := call(gas(), _tokenToSell, 0, 0x7c, 0x44, 0, 0)
 
@@ -90,7 +99,7 @@ contract UniswapV2Exchange {
             mstore(0x7c, _ERC20_BALANCE_ID)
             mstore(0x80, address())
 
-            let amount := call(gas(), _token, 0, 0x7c, 0x44, 0, 0)
+            let amount := staticcall(gas(), _token, 0x7c, 0x44, 0, 0)
 
             returndatacopy(0, 0, returndatasize())
 

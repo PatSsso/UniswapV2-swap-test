@@ -76,7 +76,7 @@ describe('Uniswap V2 exchange', function () {
     console.log(`Token balance before: ${(await token0.balanceOf(owner.address)) / 10 ** 18}`);
     console.log(`Token balance before: ${(await token1.balanceOf(owner.address)) / 10 ** 18}`);
 
-    await token1.transfer(exchange.address, amountIn[0]);
+    await token1.transfer(exchange.address, buyAmount * 3n);
 
     const pairAddress = await factory.getPair(token0.address, token1.address);
 
