@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-import '@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol';
+import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 
 contract UniswapV2Exchange {
     address public immutable owner;
@@ -32,8 +32,8 @@ contract UniswapV2Exchange {
         owner = msg.sender;
     }
 
-    function swap(address _pair, address _tokenToBuy, uint256 _buyAmount) external onlyOwner {
-        // 129081
+    function swap(address _pair, address _tokenToBuy, uint256 _buyAmount) external {
+        // 130429
         address token0;
         address token1;
         address _tokenToSell;
@@ -66,24 +66,18 @@ contract UniswapV2Exchange {
             reserveIn := mload(0)
             reserveOut := mload(32)
 
-            // let ptr := mload(0x40)
-            // mstore(ptr, _GET_AMOUNT_IN)
-            // mstore(add(ptr, 0x04), _buyAmount)
-            // mstore(add(ptr, 0x24), reserveIn)
-            // mstore(add(ptr, 0x44), reserveOut)
-            // let a := staticcall(gas(), address(), ptr, 0x64, ptr, 0x20)
-            // if iszero(a) {
-            //     let errorPtr := mload(0x40)
-            //     mstore(errorPtr, 0x10b8ec1800000000000000000000000000000000000000000000000000000000)
-            //     revert(errorPtr, 0x4)
-            // }
+            // calculate amountIn
+            let ptr := mload(0x40)
+            mstore(ptr, _GET_AMOUNT_IN)
+            mstore(add(ptr, 0x04), _buyAmount)
+            mstore(add(ptr, 0x24), reserveIn)
+            mstore(add(ptr, 0x44), reserveOut)
 
-            // amountIn := mload(0)
-        }
+            let a := staticcall(gas(), address(), ptr, 0x64, 0, 0)
 
-        amountIn = getAmountIn(_buyAmount, reserveIn, reserveOut);
+            returndatacopy(0, 0, returndatasize())
+            amountIn := mload(0)
 
-        assembly {
             // call transfer
             mstore(0x7c, _ERC20_TRANSFER_ID)
             mstore(0x80, _pair)
@@ -109,7 +103,7 @@ contract UniswapV2Exchange {
                 mstore(0xa0, 0)
             }
             mstore(0xc0, caller())
-            mstore(0xe0, '')
+            mstore(0xe0, "")
 
             let s2 := call(gas(), _pair, 0, 0x7c, 0xa4, 0, 0)
 
@@ -146,7 +140,7 @@ contract UniswapV2Exchange {
         }
     }
 
-    function getAmountIn(uint amountOut, uint reserveIn, uint reserveOut) internal pure returns (uint amountIn) {
+    function getAmountIn(uint amountOut, uint reserveIn, uint reserveOut) external pure returns (uint amountIn) {
         assembly {
             let numerator := mul(reserveIn, amountOut)
             numerator := mul(numerator, 1000)
