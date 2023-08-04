@@ -37,8 +37,8 @@ contract UniswapV2Exchange {
         address token0;
         address token1;
         address _tokenToSell;
-        uint256 reserveIn;
-        uint256 reserveOut;
+        uint256 reserve0;
+        uint256 reserve1;
         uint256 amountIn;
 
         assembly {
@@ -63,20 +63,20 @@ contract UniswapV2Exchange {
             mstore(0x00, 0x0902f1ac) // getReserves()
             let res := staticcall(gas(), _pair, 0x1c, 0x20, 0, 0)
             returndatacopy(0, 0, 64)
-            reserveIn := mload(0)
-            reserveOut := mload(32)
+            reserve0 := mload(0)
+            reserve1 := mload(32)
 
             // calculate amountIn
             mstore(0x7c, _GET_AMOUNT_IN)
             mstore(0x80, _buyAmount)
             switch eq(token0, _tokenToBuy)
             case 0 {
-                mstore(0xa0, reserveIn)
-                mstore(0xc0, reserveOut)
+                mstore(0xa0, reserve0)
+                mstore(0xc0, reserve1)
             }
             case 1 {
-                mstore(0xa0, reserveOut)
-                mstore(0xc0, reserveIn)
+                mstore(0xa0, reserve1)
+                mstore(0xc0, reserve0)
             }
 
             let a := staticcall(gas(), address(), 0x7c, 0xc4, 0, 0)
