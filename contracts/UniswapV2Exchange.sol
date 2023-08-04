@@ -33,7 +33,7 @@ contract UniswapV2Exchange {
     }
 
     function swap(address _pair, address _tokenToBuy, uint256 _buyAmount) external {
-        // 130404
+        // 130454
         address token0;
         address token1;
         address _tokenToSell;
@@ -69,8 +69,15 @@ contract UniswapV2Exchange {
             // calculate amountIn
             mstore(0x7c, _GET_AMOUNT_IN)
             mstore(0x80, _buyAmount)
-            mstore(0xa0, reserveIn)
-            mstore(0xc0, reserveOut)
+            switch eq(token0, _tokenToBuy)
+            case 0 {
+                mstore(0xa0, reserveIn)
+                mstore(0xc0, reserveOut)
+            }
+            case 1 {
+                mstore(0xa0, reserveOut)
+                mstore(0xc0, reserveIn)
+            }
 
             let a := staticcall(gas(), address(), 0x7c, 0xc4, 0, 0)
 
