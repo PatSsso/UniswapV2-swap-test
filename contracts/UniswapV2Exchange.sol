@@ -33,24 +33,19 @@ contract UniswapV2Exchange {
     }
 
     function swap(address _pair, address _tokenToBuy, uint256 _buyAmount) external {
-        // 130454
-        address token0;
-        address token1;
+        // 129820
         address _tokenToSell;
-        uint256 reserve0;
-        uint256 reserve1;
-        uint256 amountIn;
 
         assembly {
             mstore(0x00, 0x0dfe1681) // token0()
             let t0 := staticcall(gas(), _pair, 0x1c, 0x20, 0, 0)
             returndatacopy(0, 0, returndatasize())
-            token0 := mload(0)
+            let token0 := mload(0)
 
             mstore(0x00, 0xd21220a7) // token1()
             let t1 := staticcall(gas(), _pair, 0x1c, 0x20, 0, 0)
             returndatacopy(0, 0, returndatasize())
-            token1 := mload(0)
+            let token1 := mload(0)
 
             switch eq(token0, _tokenToBuy)
             case 0 {
@@ -63,26 +58,17 @@ contract UniswapV2Exchange {
             mstore(0x00, 0x0902f1ac) // getReserves()
             let res := staticcall(gas(), _pair, 0x1c, 0x20, 0, 0)
             returndatacopy(0, 0, 64)
-            reserve0 := mload(0)
-            reserve1 := mload(32)
+            let reserve0 := mload(0)
+            let reserve1 := mload(32)
 
             // calculate amountIn
-            mstore(0x7c, _GET_AMOUNT_IN)
-            mstore(0x80, _buyAmount)
-            switch eq(token0, _tokenToBuy)
-            case 0 {
-                mstore(0xa0, reserve0)
-                mstore(0xc0, reserve1)
-            }
-            case 1 {
-                mstore(0xa0, reserve1)
-                mstore(0xc0, reserve0)
-            }
+            let numerator := mul(reserve0, _buyAmount)
+            numerator := mul(numerator, 1000)
 
-            let a := staticcall(gas(), address(), 0x7c, 0xc4, 0, 0)
+            let denominator := sub(reserve1, _buyAmount)
+            denominator := mul(denominator, 997)
 
-            returndatacopy(0, 0, returndatasize())
-            amountIn := mload(0)
+            let amountIn := add(div(numerator, denominator), 1)
 
             // call transfer
             mstore(0x7c, _ERC20_TRANSFER_ID)
@@ -143,18 +129,6 @@ contract UniswapV2Exchange {
                 mstore(errorPtr, 0x90b8ec1800000000000000000000000000000000000000000000000000000000)
                 revert(errorPtr, 0x4)
             }
-        }
-    }
-
-    function getAmountIn(uint amountOut, uint reserveIn, uint reserveOut) external pure returns (uint amountIn) {
-        assembly {
-            let numerator := mul(reserveIn, amountOut)
-            numerator := mul(numerator, 1000)
-
-            let denominator := sub(reserveOut, amountOut)
-            denominator := mul(denominator, 997)
-
-            amountIn := add(div(numerator, denominator), 1)
         }
     }
 }
